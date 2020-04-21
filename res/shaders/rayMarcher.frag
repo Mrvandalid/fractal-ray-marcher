@@ -412,7 +412,7 @@ float distFunc(in vec3 point, out vec4 color){
         case 1:// Box with abs folding
         float torus = sdTorus(p, vec2(1, 0.5));
         p = scale(p, 0.5);
-        vec3 c = vec3(1.5) + debug;
+        c = vec3(1.5) + debug;
         p = translate(p, c);
         p = foldAbs(p, -c);
         fractalColor = vec3(0, 0.8, 0.2) * cutoff + defaultColor * (1-cutoff);
