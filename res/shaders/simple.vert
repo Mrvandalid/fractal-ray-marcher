@@ -3,6 +3,8 @@
 in layout(location = 0) vec3 position;
 in layout(location = 1) vec3 normal;
 in layout(location = 2) vec2 textureCoordinates_in;
+
+out layout(location = 1) vec2 textureCoordinates;
 //
 //uniform layout(location = 3) mat4 projection;
 //uniform layout(location = 4) mat4 model;
@@ -23,5 +25,6 @@ in layout(location = 2) vec2 textureCoordinates_in;
 uniform layout(location = 15) mat4 MVP;
 
 void main(){
+    textureCoordinates = textureCoordinates_in;
     gl_Position = MVP * vec4(position, 1);
 }
