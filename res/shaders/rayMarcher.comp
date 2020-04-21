@@ -1,0 +1,320 @@
+#version 450
+
+layout(local_size_x = 1, local_size_y = 1) in;
+layout(rgba32f, binding = 0) uniform image2D output_img;
+
+uniform layout(location = 0) vec3 cameraPosition;
+uniform layout(location = 1) vec3 lowerLeft;
+uniform layout(location = 2) vec3 deltaU;
+uniform layout(location = 3) vec3 deltaV;
+
+uniform layout(location = 5) float time;
+
+uniform layout(location = 10) float debugDepth;
+uniform layout(location = 11) float debugHorizontal;
+uniform layout(location = 12) float debugVertical;
+
+vec3 lightDir = vec3(0.81f, -0.51f, 0.3f);
+
+float shininess = 16;
+float specIntensity = 0.5f;
+
+vec3 backgroundColor = vec3(0.05);
+vec3 topColor = vec3(0, 0.6f, 0.7f);
+vec3 botColor = vec3(0.5f, 0.5f, 0.5f);
+float backgroundBlend = .3f;
+
+float minStepSize = 0.001f;
+float detectionLength = minStepSize * 2;
+
+float sqrLength(vec3 vector){
+    return dot(vector, vector);
+}
+
+float sdSphere(in vec3 point, in float radius){
+    return length(point) - radius;
+}
+
+float sdBox(in vec3 point, in  vec3 size){
+    vec3 difference = abs(point) - size;
+    return length(max(difference, 0)) + min(max(difference.x, max(difference.y, difference.z)), 0);
+}
+
+float sdPlane(in vec3 point, in vec3 normal, in  float offsetOrigin){
+    return dot(point, normal) + offsetOrigin;
+}
+
+float sdCapsule(vec3 point, vec3 start, vec3 end, float r)
+{
+    vec3 startToRef = point - start, startToEnd = end - start;
+    float h = clamp(dot(startToRef, startToEnd)/dot(startToEnd, startToEnd), 0.0, 1.0);
+    return length(startToRef - startToEnd*h) - r;
+}
+
+float sdCone(vec3 point, float angle)
+{
+    // c is the sin/cos of the angle
+    vec2 tip = vec2(sin(angle), cos(angle));
+    float radius = length(point.xy);
+    return dot(tip, vec2(radius, point.z));
+}
+
+float sdSolidAngle(vec3 point, vec2 sinCosAngle, float size)
+{
+    // I am not going to pretend to understand how this works.
+    vec2 height = vec2(length(point.xz), point.y);
+    float width = length(height) - size;
+    float dome = length(height - sinCosAngle * clamp(dot(height, sinCosAngle), 0.0, size));
+    return max(width, dome * sign(sinCosAngle.y * height.x - sinCosAngle.x * height.y));
+}
+
+float sdTorus(vec3 point, vec2 radius)
+{
+    vec2 outerRadius = vec2(length(point.xz)-radius.x, point.y);
+    return length(outerRadius)-radius.y;
+}
+
+float smoothBevel(in float sdFunction, float radius){
+    return sdFunction - radius;
+}
+
+float onion(in float sdFunction, float thickness){
+    return abs(sdFunction) - thickness;
+}
+
+float smoothMin(float sdFunctionA, float sdFunctionB, float radius){
+    float distance = max(radius - abs(sdFunctionA - sdFunctionB), 0.0) / radius;
+    return min(sdFunctionA, sdFunctionB) - distance * distance * distance * radius * (1.0 / 6.0);
+}
+
+
+float udSqrTriangle(vec3 p, vec3 a, vec3 b, vec3 c)
+{
+    vec3 ba = b - a; vec3 pa = p - a;
+    vec3 cb = c - b; vec3 pb = p - b;
+    vec3 ac = a - c; vec3 pc = p - c;
+    vec3 nor = cross(ba, ac);
+
+
+
+    return
+    (sign(dot(cross(ba, nor), pa)) +
+    sign(dot(cross(cb, nor), pb)) +
+    sign(dot(cross(ac, nor), pc))<2.0)
+    ?
+    min(min(
+    sqrLength(ba*clamp(dot(ba, pa)/sqrLength(ba), 0.0, 1.0)-pa),
+    sqrLength(cb*clamp(dot(cb, pb)/sqrLength(cb), 0.0, 1.0)-pb)),
+    sqrLength(ac*clamp(dot(ac, pc)/sqrLength(ac), 0.0, 1.0)-pc))
+    :
+    dot(nor, pa)*dot(nor, pa)/sqrLength(nor);
+}
+
+//float dTetrahedron(in vec3 point){
+//    vec3 a1 = vec3(1, 1, 1);
+//    vec3 a2 = vec3(-1, -1, 1);
+//    vec3 a3 = vec3(1, -1, -1);
+//    vec3 a4 = vec3(-1, 1, -1);
+//
+//    float dist1 = udSqrTriangle(point, a1, a4, a2);
+//    float dist2 = udSqrTriangle(point, a1, a4, a3);
+//    float dist3 = udSqrTriangle(point, a3, a2, a1);
+//    float dist4 = udSqrTriangle(point, a3, a2, a4);
+//
+//    float closest = min(min(dist1, dist2), min(dist3, dist4));
+//    return sqrt(closest);
+//}
+
+float dTetrahedron(in vec3 point){
+    float x = point.x;
+    float y = point.y;
+    float z = point.z;
+    float maxDist = max(max(-x - y - z, x + y - z), max(-x + y + z, x - y + z));
+    return (maxDist - 1) / (length(point) * (1.73205080757));
+}
+
+vec3 symmetry(in vec3 point, vec3 axisNormal){
+    point -= 2.0 * min(0.0, dot(point, axisNormal)) * axisNormal;
+    return point;
+}
+
+vec3 repeat(in vec3 point, in vec3 center){
+    return mod(point + 0.5 * center, center) - 0.5 * center;
+}
+
+mat3 rotationAlign(in const vec3 d, in const vec3 z)
+{
+    const vec3  v = cross(z, d);
+    const float c = dot(z, d);
+    const float k = 1.0f/(1.0f+c);
+
+    return mat3x3(v.x*v.x*k + c, v.y*v.x*k - v.z, v.z*v.x*k + v.y,
+    v.x*v.y*k + v.z, v.y*v.y*k + c, v.z*v.y*k - v.x,
+    v.x*v.z*k - v.y, v.y*v.z*k + v.x, v.z*v.z*k + c);
+}
+
+vec3 rotateX(in vec3 point, vec2 sinCosAngle){
+    float ca = sinCosAngle.y;
+    float sa = sinCosAngle.x;
+    mat3 rotation = mat3(
+    1, 0, 0,
+    0, ca, sa,
+    0, -sa, ca
+    );
+    return rotation * point;
+}
+
+vec3 rotateY(in vec3 point, vec2 sinCosAngle){
+    float ca = sinCosAngle.y;
+    float sa = sinCosAngle.x;
+    mat3 rotation = mat3(
+    ca, 0, sa,
+    0, 1, 0,
+    -sa, 0, ca
+    );
+    return rotation * point;
+}
+
+vec3 rotateZ(in vec3 point, vec2 sinCosAngle){
+    float ca = sinCosAngle.y;
+    float sa = sinCosAngle.x;
+    mat3 rotation = mat3(
+    ca, -sa, 0,
+    sa, ca, 0,
+    0, 0, 1
+    );
+    return rotation * point;
+}
+
+vec3 translate(in vec3 point, vec3 translation){
+    return point - translation;
+}
+
+//float distFunc(in vec3 point){ //Spinning Serpinski tetrahedron
+//    vec2 sinCos = vec2(sin(time/2), cos(time/2));
+//    vec2 sinCos2 = vec2(sin(debugHorizontal * 0.1f), cos(debugHorizontal * 0.1f));
+//    vec3 z = rotateY(point, sinCos);
+//    float r;
+//    int i = 0;
+//    float Scale = 2;
+//    vec3 Offset = vec3(1 + debugVertical);
+//    while (i < int(debugDepth + 1)) {
+//
+//        if (z.x+z.y<0) z.xy = -z.yx;// fold 1
+//        if (z.x+z.z<0) z.xz = -z.zx;// fold 2
+//        if (z.y+z.z<0) z.zy = -z.yz;// fold 3
+//
+//        z = z*Scale - Offset * (Scale-1.0);
+//        z = rotateY(z, sinCos2);
+//        i++;
+//    }
+//    return (sdBox(z, vec3(0.5 + debugVertical * 0.5) * Scale)) * pow(Scale, -float(n));
+//}
+
+float distFunc(in vec3 point){ //Cube fractal
+
+    vec2 sinCos = vec2(sin(time/2), cos(time/2));
+    vec2 sinCos2 = vec2(sin(debugHorizontal * 0.1f), cos(debugHorizontal * 0.1f));
+    vec3 z = rotateY(point, sinCos);
+    //    z = symmetry(z, vec3(0,0,1));
+
+    //    vec3 mirror1 = normalize(vec3(1, 1, 1));
+    //    vec3 mirror2 = normalize(vec3(1, 0, 1));
+    //    vec3 mirror3 = normalize(vec3(0, 1, -1));
+    //    vec3 mirror4 = normalize(vec3(-1, 1, 0));
+
+    int i;
+    float currentScale = 1;
+    float Scale = 2;
+    vec3 Offset = vec3(1 + debugVertical);
+    for (i = 0; i < int(debugDepth + 1); i++) {
+
+        z = rotateZ(z, sinCos2);
+        z = symmetry(z, vec3(0, 1, 0));
+
+        z = symmetry(z, vec3(1, 0, 0));
+        z = rotateX(z, sinCos2);
+        z = symmetry(z, vec3(0, 0, 1));
+
+
+        z = z*Scale - Offset * (Scale-1.0);
+        //        z = rotateY(z, sinCos2);
+    }
+
+    return (sdBox(z, vec3(0.5 + debugVertical * 0.5) * Scale)) * pow(Scale, -float(i));
+}
+
+// Works by arranging the sampling points in a tetrahedron
+vec3 getNormal(in vec3 point, in vec3 origin){
+    const float h = 0.0001f * length(point - origin);
+    const vec2 sign = vec2(1.0f, -1.0f);
+    return normalize(sign.xyy * distFunc(point + sign.xyy * h) +
+    sign.yyx * distFunc(point + sign.yyx * h) +
+    sign.yxy * distFunc(point + sign.yxy * h) +
+    sign.xxx * distFunc(point + sign.xxx * h));
+}
+
+void main() {
+    vec4 pixel = vec4(0, 0, 0, 1.0);
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+
+
+    //    vec3 origin = cameraPosition;// + vec3((xNormalized * scale - scale / 2) * xOy, yNormalized  * scale - scale/2, 0);
+    vec3 origin = cameraPosition;
+    vec3 direction = (lowerLeft + (pixelCoords.x + 0.5f) * deltaU + (pixelCoords.y + 0.5f) * deltaV) - cameraPosition;
+    direction = normalize(direction);
+    //    origin += cameraPosition - origin;
+
+    float dirY = direction.y;
+    pixel += vec4(topColor * max(dirY + backgroundBlend, 0) + botColor * -min(dirY - backgroundBlend, 0) + pow(max(dot(-lightDir, direction), 0), 24) * vec3(1, 1, 1), 1);
+
+    vec3 point = origin;
+    int iterations = 50;
+    float currentLength = 0;
+    int i;
+    for (i = 0; i < iterations; i++){
+        float dist = max(distFunc(point), minStepSize);
+        if (dist > 1000){
+            break;
+        }
+        currentLength += dist;
+        point += dist * direction;
+        if (dist < detectionLength * currentLength){
+            vec3 normal = getNormal(point, origin);
+
+            float ambientOcclusion = 0;
+            float aoScale = 0.1f;
+            int aoSamples = 5;
+            float aoStrength = 5;
+            for (int j = 1; j <= aoSamples; j++){
+                float trueDist = aoScale * j;
+                ambientOcclusion += (trueDist - distFunc(point + normal * trueDist)) / pow(2, j);
+            }
+            ambientOcclusion = 1 - aoStrength * ambientOcclusion;
+
+            float iRatio = float(iterations - i) / iterations;
+            vec3 glow = vec3(0, 1, 0) * iRatio + vec3(1, 0, 0) * (1 - iRatio);
+            vec3 diffuse = max(dot(-lightDir, normal), 0) * vec3(1);
+
+            vec3 reflection = reflect(lightDir, normal);
+            vec3 specular = pow(max(dot(-direction, reflection), 0), shininess) * vec3(1) * specIntensity;
+            vec3 color = (diffuse + specular + backgroundColor) * ambientOcclusion;
+            pixel = vec4(color, 1);
+            //            pixel = vec4(glow,1);
+            break;
+        }
+    }
+
+    pixel += vec4(backgroundColor, 1);
+
+    //    vec3 sIntersect = sphereIntersect(primaryRay, sphere1);
+    //    vec3 s1Normal = normalize(sIntersect - sphere1.position) * step(0, dot(sIntersect, sIntersect) - 0.0000000001f);
+    //
+    //    vec3 diffuse = vec3(1, 1, 1) * dot(s1Normal, -lightDir);
+
+    //    pixel += vec4(0.3, 1, 0, 0) * vec4(diffuse, 0);
+
+    pixel.xyz = pow(pixel.xyz, vec3(1.0/2.2)); // Gamma correction
+
+    imageStore(output_img, pixelCoords, pixel);
+}
