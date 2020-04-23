@@ -1,8 +1,41 @@
-# fractal-ray-marcher
+# Fractal ray marcher
 An openGL implementation of a raymarching engine which visualize some 3D fractals.
 
-# gloom
+You can watch a demo video of the project here:
 
+[![Ray marcher demo video](http://img.youtube.com/vi/Et8JcAHHsOY/0.jpg)](http://www.youtube.com/watch?v=Et8JcAHHsOY "Fractal ray marcher demo")
+
+## Controls
+**Mouse:** rotate the camera on the xy axes.
+
+**Z-X:** rotate the camera on the z axis (note: has gimbal lock).
+
+**W-A-S-D:** move camera in the xz plane.
+
+**E-Q:** move camera in the y direction.
+
+**TAB:** switch scene.
+
+**Left-shift:** modifier – multiplies your action by 5.
+
+**Left-ctrl:** modifier – multiplies your action by 0.125
+
+**P:** pause the rendering. Nice for screenshots.
+
+**I-K-J-L-U-O:** increase/decrease debug numbers, three in total. Try them out! 
+
+**T-G:** increase/decrease reflectivity.
+
+**0-1-2-3-4:** set maximum reflection bounces.
+
+**Scroll wheel:** Change turntable speed. (need to scroll a lot) 
+
+**Esc:** close application.
+
+You can set Anti-aliasing in the shader but is extremely expensive.
+
+
+# gloom
 
 A minimalistic boilerplate for OpenGL with C++ derived from _Glitter_. Its intended use is to get smaller OpenGL projects quickly up and running for the graphics courses at _NTNU_.
 
