@@ -554,17 +554,17 @@ vec3 applyFog(in vec3 color, in vec3 origin, in vec3 rayDir, in vec3 lightDir, i
     float falloffDelay = 1.05;
 
     vec3 absorbedFalloff = vec3(test);
-    vec3 scatterFalloff = vec3(0.03);
+    vec3 scatterFalloff = vec3(0.0125);
 
-    //    float originY = origin.y + debug.y;
-    //    float dirY = rayDir.y + debug.y;
-    //    float b = 0.5 + debug.z;
-    //    float c = (0.01 + debug.x) / b;
-    //    float fogAmount = c * exp(-originY * b) * (1 - exp(-distanceToCamera * dirY * b)) / dirY;
-    //    fogAmount = clamp(fogAmount, 0, 1);
+//    float originY = origin.y + debug.y;
+//    float dirY = rayDir.y;
+//    float b = 0.5 + debug.z;
+//    float c = (0.01 + debug.x) / b;
+//    float fogAmount = c * exp(-originY * b) * (1 - exp(-distanceToCamera * dirY * b)) / dirY;
+//    fogAmount = clamp(fogAmount, 0, 1);
 
     vec3 absorbedColor = min(falloffDelay * exp(-distanceToCamera * absorbedFalloff), vec3(1));
-    vec3 scatterColor = min(falloffDelay * exp(-distanceToCamera * scatterFalloff), vec3(1));// * (1-fogAmount);
+    vec3 scatterColor = min(falloffDelay * exp(-distanceToCamera * scatterFalloff), vec3(1));//* (1-fogAmount);
 
     float sunAmount = max(dot(rayDir, lightDir), 0);
 
@@ -704,7 +704,7 @@ void main() {
             int iterations = 100;
             totalDist = 0;
 
-            if (rayMarch(point, direction, 100, 0, 128 + int(debug.y), px, totalDist, fractalColor))
+            if (rayMarch(point, direction, 100, 0, 128, px, totalDist, fractalColor))
             {
                 vec3 normal = getNormal(point, px);
                 float ambientOcclusion = getAmbientOcclusion(point, normal);
@@ -724,7 +724,6 @@ void main() {
             else {
                 pixel.rgb += getBackgroundColor(direction);
             }
-
 
         }
     }

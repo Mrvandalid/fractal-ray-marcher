@@ -55,6 +55,7 @@ GLuint outputTexture;
 
 glm::vec3 cameraDir = glm::vec3(0);
 glm::vec3 targetCameraRotation = glm::vec3(0);
+glm::vec3 targetCameraPosition = glm::vec3(0);
 
 float fov = 90.f;
 glm::vec3 debug;
@@ -141,7 +142,7 @@ Mesh generateQuad(int width, int height) {
 }
 
 void handleKeyboard(GLFWwindow* window, float deltaTime) {
-	float translationSpeed = 0.1;
+	float translationSpeed = 0.5;
 	float rotationSpeed = 2;
 
 	float multiplier = 1;
@@ -264,9 +265,8 @@ void handleKeyboard(GLFWwindow* window, float deltaTime) {
 	if (glfwGetKey(window, GLFW_KEY_TAB)) {
 		if (!pressedSwitchScene) {
 			scene = (scene + 1) % 7;
-			debug.x = 0;
-			debug.y = 0;
-			debug.z = 0;
+			debug = glm::vec3(0);
+			debug2 = glm::vec3(0);
 			timer = 0;
 		}
 		pressedSwitchScene = true;
@@ -316,6 +316,7 @@ void initGame(GLFWwindow* window, CommandLineOptions gameOptions) {
 	cameraNode = createSceneNode();
 
 	cameraNode->position.z = -5;
+	targetCameraPosition = cameraNode->position;
 //	testNode = createSceneNode();
 
 
@@ -390,10 +391,9 @@ void updateFrame(GLFWwindow* window) {
 	timer += deltaTime * (1 + scroll * 0.01f);
 
 
-
+	targetCameraPosition += glm::transpose(glm::inverse(glm::mat3(cameraNode->currentTransformationMatrix))) * cameraDir;
 //	glm::vec3 cameraNode->position = glm::vec3(0, 2, -20);
-	cameraNode->position +=
-			glm::transpose(glm::inverse(glm::mat3(cameraNode->currentTransformationMatrix))) * cameraDir;
+	cameraNode->position = lerp(cameraNode->position, targetCameraPosition, deltaTime * 2);
 	cameraDir = glm::vec3(0);
 
 	handleKeyboard(window, deltaTime);
@@ -415,7 +415,7 @@ void updateFrame(GLFWwindow* window) {
 
 //	targetCameraRotation.x += mouseSensitivity * deltaY / windowHeight;
 //	targetCameraRotation.y += mouseSensitivity * deltaX / windowHeight;
-	cameraNode->rotation = lerp(cameraNode->rotation, targetCameraRotation, deltaTime * 75);
+	cameraNode->rotation = lerp(cameraNode->rotation, targetCameraRotation, deltaTime * 2);
 
 	glfwSetCursorPos(window, float(windowWidth) / 2, float(windowHeight) / 2);
 
