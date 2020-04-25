@@ -5,6 +5,7 @@ You can watch a demo video of the project here:
 
 [![Ray marcher demo video](http://img.youtube.com/vi/Et8JcAHHsOY/0.jpg)](http://www.youtube.com/watch?v=Et8JcAHHsOY "Fractal ray marcher demo")
 
+Credit to [Inigo Iquilez](https://www.iquilezles.org/www/index.htm) and [CodeParade](https://github.com/HackerPoet) from whom I learned alot from.
 ## Controls
 **Mouse:** rotate the camera on the xy axes.
 
